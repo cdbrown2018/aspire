@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Aspire.Cli.Agents;
 using Aspire.Cli.Agents.AspireSkills;
+using Aspire.Cli.Configuration;
 using Aspire.Cli.Npm;
 using Aspire.Cli.Tests.Telemetry;
 using Aspire.Cli.Tests.TestServices;
@@ -19,6 +20,8 @@ namespace Aspire.Cli.Tests.Agents;
 
 public class AspireSkillsInstallerTests
 {
+    private const string AspireSkillDescription = "Aspire CLI commands and workflows for distributed apps";
+
     private const string GitHubReleaseAssetBuildType = "https://actions.github.io/buildtypes/workflow/v1";
 
     [Fact]
@@ -115,6 +118,70 @@ public class AspireSkillsInstallerTests
     }
 
     [Fact]
+    public async Task InstallAsync_WhenRemoteFetchFeatureIsDisabled_SkipsGitHubAndUsesEmbedded()
+    {
+        var rootDirectory = CreateTempDirectory();
+
+        try
+        {
+            var executionContext = TestExecutionContextHelper.CreateExecutionContext(new DirectoryInfo(rootDirectory));
+            var embeddedBundleProvider = await CreateEmbeddedBundleProviderAsync();
+            var attestationVerifier = new TestGitHubArtifactAttestationVerifier();
+            // Throw on any HTTP call so we can prove the GitHub path was never invoked.
+            var handler = new MockHttpMessageHandler(_ => throw new InvalidOperationException("HTTP must not be called when remote fetch is disabled."));
+            var features = new TestFeatures().SetFeature(KnownFeatures.AspireSkillsRemoteFetchEnabled, false);
+            var installer = CreateInstaller(
+                executionContext,
+                httpMessageHandler: handler,
+                githubArtifactAttestationVerifier: attestationVerifier,
+                embeddedBundleProvider: embeddedBundleProvider,
+                features: features);
+
+            var result = await installer.InstallAsync(CancellationToken.None);
+
+            Assert.Equal(AspireSkillsInstallStatus.Installed, result.Status);
+            Assert.NotNull(result.Bundle);
+            Assert.True(embeddedBundleProvider.OpenArchiveCalled);
+            Assert.False(attestationVerifier.VerifyCalled);
+        }
+        finally
+        {
+            Directory.Delete(rootDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsync_WhenRemoteFetchFeatureIsDisabledAndCacheExists_UsesCacheWithoutNetwork()
+    {
+        var rootDirectory = CreateTempDirectory();
+
+        try
+        {
+            var executionContext = TestExecutionContextHelper.CreateExecutionContext(new DirectoryInfo(rootDirectory));
+            var cachedBundleDirectory = Path.Combine(executionContext.CacheDirectory.FullName, "aspire-skills", AspireSkillsInstaller.Version);
+            await CreateCachedBundleAsync(cachedBundleDirectory);
+            var attestationVerifier = new TestGitHubArtifactAttestationVerifier();
+            var handler = new MockHttpMessageHandler(_ => throw new InvalidOperationException("HTTP must not be called when cache is used."));
+            var features = new TestFeatures().SetFeature(KnownFeatures.AspireSkillsRemoteFetchEnabled, false);
+            var installer = CreateInstaller(
+                executionContext,
+                httpMessageHandler: handler,
+                githubArtifactAttestationVerifier: attestationVerifier,
+                features: features);
+
+            var result = await installer.InstallAsync(CancellationToken.None);
+
+            Assert.Equal(AspireSkillsInstallStatus.Installed, result.Status);
+            Assert.NotNull(result.Bundle);
+            Assert.False(attestationVerifier.VerifyCalled);
+        }
+        finally
+        {
+            Directory.Delete(rootDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void EmbeddedAspireSkillsBundleProvider_OpensSnapshotResource()
     {
         var provider = new EmbeddedAspireSkillsBundleProvider(NullLogger<EmbeddedAspireSkillsBundleProvider>.Instance);
@@ -124,12 +191,110 @@ public class AspireSkillsInstallerTests
 
         Assert.Equal(AspireSkillsInstaller.Version, metadata.Version);
         Assert.Equal(AspireSkillsInstaller.GitHubRepository, metadata.Repository);
-        Assert.Equal(metadata.Sha256, ComputeSha256(archiveStream));
+        Assert.Equal(metadata.Sha512, ComputeSha512(archiveStream));
     }
 
-    private static string ComputeSha256(Stream stream)
+    private static string ComputeSha512(Stream stream)
     {
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        return Convert.ToHexString(SHA512.HashData(stream)).ToLowerInvariant();
+    }
+
+    [Fact]
+    public async Task EmbeddedAspireSkillsBundle_ArchiveIsSha512_AndPerFileHashesVerify()
+    {
+        var provider = new EmbeddedAspireSkillsBundleProvider(NullLogger<EmbeddedAspireSkillsBundleProvider>.Instance);
+        var metadata = Assert.IsType<EmbeddedAspireSkillsBundleMetadata>(provider.Metadata);
+        Assert.NotNull(metadata.Version);
+        Assert.NotNull(metadata.AssetName);
+        Assert.NotNull(metadata.Sha512);
+
+        var extractRoot = CreateTempDirectory();
+        try
+        {
+            // Stage the embedded archive to disk and confirm its full-file SHA-512 matches the metadata
+            // the installer trusts before extraction (mirrors AspireSkillsInstaller.ValidateArchiveSha512).
+            // The full-file archive checksum is always SHA-512, independent of the per-file manifest below.
+            var archivePath = Path.Combine(extractRoot, metadata.AssetName!);
+            await using (var archiveStream = Assert.IsAssignableFrom<Stream>(provider.OpenArchive()))
+            await using (var fileStream = File.Create(archivePath))
+            {
+                await archiveStream.CopyToAsync(fileStream);
+            }
+
+            Assert.Equal(128, AspireSkillsBundle.NormalizeSha512(metadata.Sha512!).Length);
+            Assert.Equal(AspireSkillsBundle.NormalizeSha512(metadata.Sha512!), ComputeSha512(archivePath));
+
+            // Extract the .tgz and independently recompute every per-file hash from the internal
+            // skill-manifest.json. The embedded snapshot is the exact attestation-verified release asset,
+            // so its per-file manifest uses whatever digest that release shipped (SHA-256 for v0.0.1;
+            // SHA-512 once a signed SHA-512 release is re-embedded). This self-computes from whatever is
+            // embedded, so it stays valid across that transition.
+            var contentDir = Path.Combine(extractRoot, "content");
+            Directory.CreateDirectory(contentDir);
+            await using (var fileStream = File.OpenRead(archivePath))
+            await using (var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress))
+            {
+                await TarFile.ExtractToDirectoryAsync(gzipStream, contentDir, overwriteFiles: true, CancellationToken.None);
+            }
+
+            var manifestPath = Directory.EnumerateFiles(contentDir, "skill-manifest.json", SearchOption.AllDirectories).Single();
+            var bundleRoot = Path.GetDirectoryName(manifestPath)!;
+
+            SkillBundleManifest? manifest;
+            await using (var manifestStream = File.OpenRead(manifestPath))
+            {
+                manifest = await JsonSerializer.DeserializeAsync(manifestStream, AspireSkillsJsonSerializerContext.Default.SkillBundleManifest);
+            }
+
+            Assert.NotNull(manifest);
+            Assert.NotEmpty(manifest!.Skills);
+
+            var validatedFileCount = 0;
+            foreach (var skill in manifest.Skills)
+            {
+                Assert.NotEmpty(skill.Files);
+                foreach (var file in skill.Files)
+                {
+                    var filePath = Path.Combine(bundleRoot, "skills", skill.Name!, AspireSkillsBundle.NormalizeRelativePath(file.RelativePath));
+
+                    // Verify against the digest the manifest actually carries. SHA-512 is preferred and is
+                    // what new builds emit; SHA-256 is the accepted fallback for the pre-switch attested bundle.
+                    if (!string.IsNullOrWhiteSpace(file.Sha512))
+                    {
+                        var normalizedHash = AspireSkillsBundle.NormalizeSha512(file.Sha512);
+                        Assert.Equal(128, normalizedHash.Length);
+                        Assert.Equal(normalizedHash, ComputeSha512(filePath));
+                    }
+                    else
+                    {
+                        var normalizedHash = AspireSkillsBundle.NormalizeSha256(file.Sha256!);
+                        Assert.Equal(64, normalizedHash.Length);
+                        Assert.Equal(normalizedHash, ComputeSha256(filePath));
+                    }
+
+                    validatedFileCount++;
+                }
+            }
+
+            Assert.True(validatedFileCount > 0);
+
+            // Run the production loader end-to-end over the extracted bundle. Per-file verification lives in
+            // AspireSkillsBundle.ValidateFile, so a clean load is the same check the runtime performs before
+            // caching the embedded snapshot.
+            var bundle = await AspireSkillsBundle.LoadAsync(
+                new DirectoryInfo(bundleRoot),
+                metadata.Version!,
+                metadata.Version!,
+                skipCompatibilityCheck: true,
+                CancellationToken.None);
+
+            Assert.Equal(metadata.Version, bundle.Version);
+            Assert.NotEmpty(bundle.GetSkillDefinitions());
+        }
+        finally
+        {
+            Directory.Delete(extractRoot, recursive: true);
+        }
     }
 
     [Fact]
@@ -277,7 +442,7 @@ public class AspireSkillsInstallerTests
                 Repository = AspireSkillsInstaller.GitHubRepository,
                 Tag = $"v{AspireSkillsInstaller.Version}",
                 AssetName = $"aspire-skills-v{AspireSkillsInstaller.Version}.tgz",
-                Sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+                Sha512 = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
             };
             var executionContext = TestExecutionContextHelper.CreateExecutionContext(new DirectoryInfo(rootDirectory));
             var installer = CreateInstaller(
@@ -288,9 +453,78 @@ public class AspireSkillsInstallerTests
 
             Assert.Equal(AspireSkillsInstallStatus.Failed, result.Status);
             Assert.NotNull(result.Message);
-            Assert.Contains("SHA-256", result.Message, StringComparison.Ordinal);
-            Assert.Contains("0000000000000000000000000000000000000000000000000000000000000000", result.Message, StringComparison.Ordinal);
+            Assert.Contains("SHA-512", result.Message, StringComparison.Ordinal);
+            Assert.Contains("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", result.Message, StringComparison.Ordinal);
             Assert.True(embeddedBundleProvider.OpenArchiveCalled);
+        }
+        finally
+        {
+            Directory.Delete(rootDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsync_WhenEmbeddedBundleSupportsRangeExcludesCurrentCli_StillUsesEmbeddedBundle()
+    {
+        var rootDirectory = CreateTempDirectory();
+
+        try
+        {
+            // Simulate a CLI prerelease whose version falls outside the embedded snapshot's
+            // declared `supports` range (e.g., a 13.5.x dogfood build paired with a snapshot
+            // stamped ">=13.4.0 <13.5.0"). The embedded path must still install the bundle —
+            // otherwise an offline user with a version-mismatched embedded snapshot would lose
+            // access to all bundled skills.
+            var staleSupports = new SkillBundleSupports
+            {
+                AspireCli = ">=0.0.1 <0.0.2",
+                AspireSdk = ">=0.0.1 <0.0.2"
+            };
+            var executionContext = TestExecutionContextHelper.CreateExecutionContext(new DirectoryInfo(rootDirectory));
+            var embeddedBundleProvider = await CreateEmbeddedBundleProviderAsync(supports: staleSupports);
+            var installer = CreateInstaller(executionContext, embeddedBundleProvider: embeddedBundleProvider);
+
+            var result = await installer.InstallAsync(CancellationToken.None);
+
+            Assert.Equal(AspireSkillsInstallStatus.Installed, result.Status);
+            Assert.NotNull(result.Bundle);
+            Assert.True(embeddedBundleProvider.OpenArchiveCalled);
+        }
+        finally
+        {
+            Directory.Delete(rootDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsync_WhenCachedBundleSupportsRangeExcludesCurrentCli_StillUsesCache()
+    {
+        var rootDirectory = CreateTempDirectory();
+
+        try
+        {
+            var executionContext = TestExecutionContextHelper.CreateExecutionContext(new DirectoryInfo(rootDirectory));
+            var cachedBundleDirectory = Path.Combine(executionContext.CacheDirectory.FullName, "aspire-skills", AspireSkillsInstaller.Version);
+
+            // The cache is written by the installer itself (either from GitHub or from the
+            // embedded snapshot), so the bundle's `supports` range is not the right
+            // invalidation signal — bundle version is. A stale `supports` on a cached entry
+            // must not force a re-install on every invocation.
+            await CreateCachedBundleAsync(
+                cachedBundleDirectory,
+                supports: new SkillBundleSupports
+                {
+                    AspireCli = ">=0.0.1 <0.0.2",
+                    AspireSdk = ">=0.0.1 <0.0.2"
+                });
+            var embeddedBundleProvider = await CreateEmbeddedBundleProviderAsync();
+            var installer = CreateInstaller(executionContext, embeddedBundleProvider: embeddedBundleProvider);
+
+            var result = await installer.InstallAsync(CancellationToken.None);
+
+            Assert.Equal(AspireSkillsInstallStatus.Installed, result.Status);
+            Assert.NotNull(result.Bundle);
+            Assert.False(embeddedBundleProvider.OpenArchiveCalled);
         }
         finally
         {
@@ -303,7 +537,8 @@ public class AspireSkillsInstallerTests
         HttpMessageHandler? httpMessageHandler = null,
         TestGitHubArtifactAttestationVerifier? githubArtifactAttestationVerifier = null,
         IConfiguration? configuration = null,
-        IEmbeddedAspireSkillsBundleProvider? embeddedBundleProvider = null)
+        IEmbeddedAspireSkillsBundleProvider? embeddedBundleProvider = null,
+        IFeatures? features = null)
     {
         return new AspireSkillsInstaller(
             githubArtifactAttestationVerifier ?? new TestGitHubArtifactAttestationVerifier(),
@@ -312,13 +547,17 @@ public class AspireSkillsInstallerTests
             new TestInteractionService(),
             executionContext,
             configuration ?? new ConfigurationBuilder().Build(),
+            // Default existing tests to the remote-fetch-enabled path so they continue to
+            // exercise the GitHub flow without per-test boilerplate. Tests that want to
+            // exercise the production default (flag off) pass an empty TestFeatures.
+            features ?? new TestFeatures().SetFeature(KnownFeatures.AspireSkillsRemoteFetchEnabled, true),
             TestTelemetryHelper.CreateInitializedTelemetry(),
             NullLogger<AspireSkillsInstaller>.Instance);
     }
 
-    private static async Task CreateCachedBundleAsync(string bundleDirectory)
+    private static async Task CreateCachedBundleAsync(string bundleDirectory, SkillBundleSupports? supports = null)
     {
-        var skillDirectory = Path.Combine(bundleDirectory, "skills", SkillDefinition.Aspire.Name);
+        var skillDirectory = Path.Combine(bundleDirectory, "skills", CommonAgentApplicators.AspireSkillName);
         Directory.CreateDirectory(skillDirectory);
 
         var skillPath = Path.Combine(skillDirectory, "SKILL.md");
@@ -335,20 +574,19 @@ public class AspireSkillsInstallerTests
         var manifest = new SkillBundleManifest
         {
             Version = AspireSkillsInstaller.Version,
-            Supports = CreateSupports(),
+            Supports = supports ?? CreateSupports(),
             Skills =
             [
                 new SkillBundleSkill
                 {
-                    Name = SkillDefinition.Aspire.Name,
-                    Description = SkillDefinition.Aspire.Description,
-                    IsDefault = true,
+                    Name = CommonAgentApplicators.AspireSkillName,
+                    Description = AspireSkillDescription,
                     Files =
                     [
                         new SkillBundleFile
                         {
                             RelativePath = "SKILL.md",
-                            Sha256 = ComputeSha256(skillPath)
+                            Sha512 = ComputeSha512(skillPath)
                         }
                     ]
                 }
@@ -368,14 +606,14 @@ public class AspireSkillsInstallerTests
         };
     }
 
-    private static async Task<byte[]> CreateBundleArchiveBytesAsync()
+    private static async Task<byte[]> CreateBundleArchiveBytesAsync(SkillBundleSupports? supports = null)
     {
         var rootDirectory = CreateTempDirectory();
 
         try
         {
             var bundleDirectory = Path.Combine(rootDirectory, $"aspire-skills-v{AspireSkillsInstaller.Version}");
-            await CreateCachedBundleAsync(bundleDirectory);
+            await CreateCachedBundleAsync(bundleDirectory, supports);
 
             await using var archiveStream = new MemoryStream();
             await using (var gzipStream = new GZipStream(archiveStream, CompressionLevel.SmallestSize, leaveOpen: true))
@@ -391,20 +629,26 @@ public class AspireSkillsInstallerTests
         }
     }
 
+    private static string ComputeSha512(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA512.HashData(stream)).ToLowerInvariant();
+    }
+
     private static string ComputeSha256(string path)
     {
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
-    private static string ComputeSha256(byte[] bytes)
+    private static string ComputeSha512(byte[] bytes)
     {
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        return Convert.ToHexString(SHA512.HashData(bytes)).ToLowerInvariant();
     }
 
-    private static async Task<TestEmbeddedAspireSkillsBundleProvider> CreateEmbeddedBundleProviderAsync()
+    private static async Task<TestEmbeddedAspireSkillsBundleProvider> CreateEmbeddedBundleProviderAsync(SkillBundleSupports? supports = null)
     {
-        var archiveBytes = await CreateBundleArchiveBytesAsync();
+        var archiveBytes = await CreateBundleArchiveBytesAsync(supports);
         return new TestEmbeddedAspireSkillsBundleProvider
         {
             Metadata = new EmbeddedAspireSkillsBundleMetadata
@@ -413,7 +657,7 @@ public class AspireSkillsInstallerTests
                 Repository = AspireSkillsInstaller.GitHubRepository,
                 Tag = $"v{AspireSkillsInstaller.Version}",
                 AssetName = $"aspire-skills-v{AspireSkillsInstaller.Version}.tgz",
-                Sha256 = ComputeSha256(archiveBytes)
+                Sha512 = ComputeSha512(archiveBytes)
             },
             ArchiveBytes = archiveBytes
         };
