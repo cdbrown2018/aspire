@@ -103,7 +103,8 @@ public sealed class CustomAtsObjectDto : IAtsConvertible<CustomAtsObjectDto>
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
                 JsonValueKind.Number when element.TryGetInt64(out var longValue) => longValue,
-                JsonValueKind.Number => element.GetDouble(),
+                JsonValueKind.Number when element.TryGetDecimal(out var decimalValue) => decimalValue,
+                JsonValueKind.Number => element.Clone(),
                 _ => throw new NotSupportedException($"Unsupported JSON value kind '{element.ValueKind}'.")
             };
         }

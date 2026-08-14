@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Aspire.Hosting.ApplicationModel;
@@ -802,6 +803,23 @@ public class AtsMarshallerTests
         var json = Assert.IsType<JsonObject>(result);
         Assert.Equal("test", json["name"]?.GetValue<string>());
         Assert.Equal([1, 2, 3], json["values"]?.AsArray().Select(value => value!.GetValue<int>()));
+    }
+
+    [Fact]
+    public void MarshalToJson_CustomAtsObjectDtoPreservesNumericValues()
+    {
+        var marshaller = CreateMarshaller();
+        const string jsonContent = """{"unsignedInteger":18446744073709551615,"preciseFraction":0.1234567890123456789012345678,"largeExponent":1e100}""";
+        var source = JsonNode.Parse(jsonContent)!.AsObject();
+
+        var dto = CustomAtsObjectDto.Deserialize(source);
+        var result = marshaller.MarshalToJson(dto);
+
+        Assert.Equal(18446744073709551615m, dto.Value["unsignedInteger"]);
+        Assert.Equal(0.1234567890123456789012345678m, dto.Value["preciseFraction"]);
+        var largeExponent = Assert.IsType<JsonElement>(dto.Value["largeExponent"]);
+        Assert.Equal("1e100", largeExponent.GetRawText());
+        Assert.Equal(jsonContent, result?.ToJsonString());
     }
 
     [Fact]

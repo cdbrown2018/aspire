@@ -1092,6 +1092,31 @@ public class CapabilityDispatcherTests
     }
 
     [Fact]
+    public void Invoke_AtsConvertibleUnionPreservesProtocolShapedProperties()
+    {
+        var dispatcher = CreateDispatcher(typeof(TestTypeCategoryCapabilities).Assembly);
+        var args = new JsonObject
+        {
+            ["value"] = new JsonObject
+            {
+                ["$handle"] = "literal-handle",
+                ["$expr"] = new JsonObject
+                {
+                    ["format"] = "literal-expression"
+                }
+            }
+        };
+
+        var result = dispatcher.Invoke("Aspire.Hosting.RemoteHost.Tests/echoAtsConvertibleUnion", args);
+
+        var resultObject = Assert.IsType<JsonObject>(result);
+        Assert.Equal("literal-handle", resultObject["$handle"]?.GetValue<string>());
+        Assert.Equal(
+            "literal-expression",
+            resultObject["$expr"]?["format"]?.GetValue<string>());
+    }
+
+    [Fact]
     public void Invoke_AcceptsUnionWithBuilderBackedHandle()
     {
         var handles = new HandleRegistry();
@@ -2536,6 +2561,19 @@ internal static class TestTypeCategoryCapabilities
         {
             TestResourceWithProperties resource => resource.Name,
             string text => text,
+            _ => throw new InvalidOperationException($"Unexpected union value type: {value.GetType().Name}")
+        };
+    }
+
+    /// <ats-summary>Echoes a union containing a custom ATS object</ats-summary>
+    [AspireExport("echoAtsConvertibleUnion")]
+    public static CustomAtsObjectDto EchoAtsConvertibleUnion(
+        [AspireUnion(typeof(CustomAtsObjectDto), typeof(string))] object value)
+    {
+        return value switch
+        {
+            CustomAtsObjectDto dto => dto,
+            string text => CustomAtsObjectDto.Deserialize(new JsonObject { ["value"] = text }),
             _ => throw new InvalidOperationException($"Unexpected union value type: {value.GetType().Name}")
         };
     }
