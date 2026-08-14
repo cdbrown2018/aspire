@@ -2371,6 +2371,12 @@ public static class AtsCapabilityScanner
             return AtsConstants.Any;
         }
 
+        // Converter types are intentionally represented by the guest language's native object type.
+        if (HostingTypeHelpers.IsAtsConvertibleType(type))
+        {
+            return AtsConstants.Any;
+        }
+
         if (type == typeof(IDictionary))
         {
             return AtsConstants.DictTypeId(AtsConstants.String, AtsConstants.Any);
@@ -2676,6 +2682,12 @@ public static class AtsCapabilityScanner
 
         // Handle object type - maps to 'any' in TypeScript
         if (type == typeof(object))
+        {
+            return new AtsTypeRef { TypeId = AtsConstants.Any, ClrType = type, Category = AtsTypeCategory.Primitive };
+        }
+
+        // Converter types are intentionally represented by the guest language's native object type.
+        if (HostingTypeHelpers.IsAtsConvertibleType(type))
         {
             return new AtsTypeRef { TypeId = AtsConstants.Any, ClrType = type, Category = AtsTypeCategory.Primitive };
         }

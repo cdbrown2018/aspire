@@ -7,25 +7,34 @@ using System.Text.Json.Nodes;
 namespace Aspire.Hosting;
 
 /// <summary>
-/// Represents an object that can be deserialized from polyglot AppHosts.
+/// Defines custom JSON conversion for a type that crosses an Aspire Type System boundary.
 /// </summary>
-public interface IAtsConvertible
+/// <typeparam name="TSelf">The type that implements the conversion contract.</typeparam>
+public interface IAtsConvertible<TSelf>
+    where TSelf : IAtsConvertible<TSelf>
 {
     /// <summary>
-    /// Deserializes the given JSON object into the implementing class's type.
+    /// Deserializes a JSON object into <typeparamref name="TSelf"/>.
     /// </summary>
-    /// <param name="jsonObj">The JSON document to convert.</param>
-    /// <returns>The deserialized object.</returns>
-    static abstract object? Deserialize(JsonObject jsonObj);
+    /// <param name="jsonObject">The JSON object to convert.</param>
+    /// <returns>The converted instance.</returns>
+    static abstract TSelf Deserialize(JsonObject jsonObject);
+
+    /// <summary>
+    /// Serializes an instance of <typeparamref name="TSelf"/> to JSON.
+    /// </summary>
+    /// <param name="value">The value to convert.</param>
+    /// <returns>The converted JSON value.</returns>
+    static abstract JsonNode? Serialize(TSelf value);
 }
 
 /// <summary>
-/// Represents an object that supports custom deserialization from polyglot AppHosts.
+/// Represents an arbitrary JSON object received from or returned to a polyglot AppHost.
 /// </summary>
 /// <remarks>
-/// <example> 
+/// <example>
 /// <code>
-/// // User-defined custom TypeScript object
+/// // User-defined TypeScript object passed to an exported Aspire API.
 /// {
 ///     route: "aspire.dev",
 ///     match: "http",
@@ -33,36 +42,31 @@ public interface IAtsConvertible
 /// }
 /// </code>
 /// </example>
-/// The above object will get de-serialized into the <see cref="Object"/> property as a <see cref="Dictionary{TKey, TValue}"/>.
+/// The object is converted to a dictionary and exposed through <see cref="Value"/>.
 /// </remarks>
-/// <ats-summary>An object that supports de-serialization of custom properties.</ats-summary>
-[AspireDto]
-public class CustomAtsObjectDto : IAtsConvertible
+public sealed class CustomAtsObjectDto : IAtsConvertible<CustomAtsObjectDto>
 {
     /// <summary>
-    /// Contains the result of deserialization.
+    /// Gets the JSON-compatible object values.
     /// </summary>
-    [AspireExportIgnore]
-    internal Dictionary<string, object?>? Object { get; set; }
+    [AspireExportIgnore(Reason = "Custom ATS objects are represented as the language's native object type.")]
+    public IReadOnlyDictionary<string, object?> Value { get; }
+
+    private CustomAtsObjectDto(Dictionary<string, object?> value)
+    {
+        Value = value;
+    }
 
     /// <summary>
-    /// Deserializes a <see cref="JsonObject"/> into a Dictionary. A new <see cref="CustomAtsObjectDto"/> will be returned 
-    /// with the results of the deserialization set to the object's <see cref="Object"/> property.
+    /// Deserializes a <see cref="JsonObject"/> into a <see cref="CustomAtsObjectDto"/>.
     /// </summary>
-    /// <param name="jsonObj">The JSON value to deserialize.</param>
-    /// <returns>A new <see cref="CustomAtsObjectDto"/> containing the deserialized <paramref name="jsonObj"/>.</returns>
-    /// <exception cref="NotSupportedException">Thrown if the <paramref name="jsonObj"/> contains an unsupported type.</exception>
-    public static object? Deserialize(JsonObject jsonObj)
+    /// <param name="jsonObject">The JSON object to deserialize.</param>
+    /// <returns>A new <see cref="CustomAtsObjectDto"/> containing the deserialized <paramref name="jsonObject"/>.</returns>
+    /// <exception cref="NotSupportedException">Thrown if <paramref name="jsonObject"/> contains an unsupported value.</exception>
+    public static CustomAtsObjectDto Deserialize(JsonObject jsonObject)
     {
-        if (jsonObj is null)
-        {
-            return null;
-        }
-
-        return new CustomAtsObjectDto()
-        {
-            Object = jsonObj.ToDictionary(kvp => kvp.Key, kvp => ConvertJsonNode(kvp.Value))
-        };
+        return new CustomAtsObjectDto(
+            jsonObject.ToDictionary(kvp => kvp.Key, kvp => ConvertJsonNode(kvp.Value), StringComparer.Ordinal));
 
         static object? ConvertJsonNode(JsonNode? node)
         {
@@ -74,7 +78,8 @@ public class CustomAtsObjectDto : IAtsConvertible
 
                 JsonObject obj => obj.ToDictionary(
                     kvp => kvp.Key,
-                    kvp => ConvertJsonNode(kvp.Value)),
+                    kvp => ConvertJsonNode(kvp.Value),
+                    StringComparer.Ordinal),
 
                 JsonArray array => array
                     .Select(ConvertJsonNode)
@@ -87,9 +92,11 @@ public class CustomAtsObjectDto : IAtsConvertible
 
         static object? ConvertJsonValue(JsonValue value)
         {
-            var element = value.GetValue<JsonElement>();
+            // JsonValue can wrap either a JsonElement parsed from JSON or a CLR primitive created in code.
+            // SerializeToElement normalizes both representations before inspecting the JSON value kind.
+            var element = JsonSerializer.SerializeToElement(value);
 
-            return value.GetValueKind() switch
+            return element.ValueKind switch
             {
                 JsonValueKind.Null => null,
                 JsonValueKind.String => element.GetString(),
@@ -97,8 +104,18 @@ public class CustomAtsObjectDto : IAtsConvertible
                 JsonValueKind.False => false,
                 JsonValueKind.Number when element.TryGetInt64(out var longValue) => longValue,
                 JsonValueKind.Number => element.GetDouble(),
-                _ => throw new NotSupportedException($"Unsupported JSON value kind '{value.GetValueKind()}'.")
+                _ => throw new NotSupportedException($"Unsupported JSON value kind '{element.ValueKind}'.")
             };
         }
+    }
+
+    /// <summary>
+    /// Serializes a <see cref="CustomAtsObjectDto"/> to JSON.
+    /// </summary>
+    /// <param name="value">The value to serialize.</param>
+    /// <returns>The serialized JSON object.</returns>
+    public static JsonNode? Serialize(CustomAtsObjectDto value)
+    {
+        return JsonSerializer.SerializeToNode(value.Value);
     }
 }

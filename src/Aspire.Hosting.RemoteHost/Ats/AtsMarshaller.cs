@@ -138,6 +138,11 @@ internal sealed class AtsMarshaller
             return null;
         }
 
+        if (typeRef.ClrType is { } clrType && HostingTypeHelpers.IsAtsConvertibleType(clrType))
+        {
+            return SerializeAtsConvertible(value, clrType);
+        }
+
         if (typeRef.TypeId == AtsConstants.CancellationToken && value is CancellationToken cancellationToken)
         {
             return SerializeCancellationToken(cancellationToken);
@@ -173,6 +178,11 @@ internal sealed class AtsMarshaller
         if (value == null)
         {
             return null;
+        }
+
+        if (HostingTypeHelpers.IsAtsConvertibleType(declaredType))
+        {
+            return SerializeAtsConvertible(value, declaredType);
         }
 
         if (declaredType == typeof(object))
@@ -420,6 +430,11 @@ internal sealed class AtsMarshaller
         }
 
         var type = value.GetType();
+        if (HostingTypeHelpers.IsAtsConvertibleType(type))
+        {
+            return SerializeAtsConvertible(value, type);
+        }
+
         if (type == typeof(CancellationToken))
         {
             return SerializeCancellationToken((CancellationToken)value);
@@ -649,9 +664,9 @@ internal sealed class AtsMarshaller
                     }
                 }
 
-                if (HostingTypeHelpers.IsIAtsConvertibleType(targetType))
+                if (HostingTypeHelpers.IsAtsConvertibleType(targetType))
                 {
-                    return targetType.GetMethod("Deserialize", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, [jsonObj]);
+                    return DeserializeAtsConvertible(jsonObj, targetType, capabilityId, paramName);
                 }
 
                 // DTOs - must have [AspireDto] attribute
@@ -682,6 +697,74 @@ internal sealed class AtsMarshaller
                 capabilityId, paramName, $"Failed to deserialize '{paramName}' as {DescribeType(targetType)}: {ex.Message}");
         }
     }
+
+    private static object DeserializeAtsConvertible(JsonObject jsonObject, Type targetType, string capabilityId, string paramName)
+    {
+        // RemoteHost is compiled into the generated managed AppHost and loads integration assemblies dynamically.
+        // The Native AOT CLI only orchestrates that process, so reflection is required here and is not trimmed by the CLI.
+        var method = FindAtsConversionMethod(targetType, AtsDeserializeMethodName, typeof(JsonObject), targetType);
+        if (method is null)
+        {
+            throw CapabilityException.InvalidArgument(
+                capabilityId,
+                paramName,
+                $"Type '{targetType.Name}' implements IAtsConvertible but does not expose Deserialize(JsonObject).");
+        }
+
+        try
+        {
+            var result = method.Invoke(null, [jsonObject]);
+            if (result is null || !targetType.IsInstanceOfType(result))
+            {
+                throw CapabilityException.InvalidArgument(
+                    capabilityId,
+                    paramName,
+                    $"Type '{targetType.Name}' returned an incompatible value from Deserialize(JsonObject).");
+            }
+
+            return result;
+        }
+        catch (TargetInvocationException ex)
+        {
+            throw CapabilityException.InvalidArgument(
+                capabilityId,
+                paramName,
+                $"Failed to deserialize '{paramName}' as {targetType.Name}: {(ex.InnerException ?? ex).Message}");
+        }
+    }
+
+    private static JsonNode? SerializeAtsConvertible(object value, Type targetType)
+    {
+        var method = FindAtsConversionMethod(targetType, AtsSerializeMethodName, targetType, typeof(JsonNode))
+            ?? throw new InvalidOperationException(
+                $"Type '{targetType.FullName}' implements IAtsConvertible but does not expose Serialize({targetType.Name}).");
+
+        try
+        {
+            return method.Invoke(null, [value]) as JsonNode;
+        }
+        catch (TargetInvocationException ex)
+        {
+            throw new InvalidOperationException(
+                $"Failed to serialize ATS convertible type '{targetType.FullName}'.",
+                ex.InnerException ?? ex);
+        }
+    }
+
+    private static MethodInfo? FindAtsConversionMethod(Type targetType, string methodName, Type parameterType, Type returnType)
+    {
+        return targetType
+            .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+            .SingleOrDefault(method =>
+                (string.Equals(method.Name, methodName, StringComparison.Ordinal) ||
+                    method.Name.EndsWith($".{methodName}", StringComparison.Ordinal)) &&
+                method.GetParameters() is [{ ParameterType: var actualParameterType }] &&
+                actualParameterType == parameterType &&
+                method.ReturnType == returnType);
+    }
+
+    private const string AtsDeserializeMethodName = "Deserialize";
+    private const string AtsSerializeMethodName = "Serialize";
 
     /// <summary>
     /// Checks if an exception indicates a type mismatch.

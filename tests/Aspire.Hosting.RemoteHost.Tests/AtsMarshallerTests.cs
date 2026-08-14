@@ -760,11 +760,40 @@ public class AtsMarshallerTests
 
         var result = marshaller.UnmarshalFromJson(json, typeof(CustomAtsObjectDto), context);
 
-        Assert.NotNull(result);
-        var dto = (CustomAtsObjectDto)result;
-        Assert.Equal("test", dto.Object!["name"]);
-        Assert.Equal(5L, dto.Object!["count"]);
-        Assert.True((bool)(dto.Object!["complex"] as Dictionary<string, object?>)!["nestedProperty"]!);
+        var dto = Assert.IsType<CustomAtsObjectDto>(result);
+        Assert.Equal("test", dto.Value["name"]);
+        Assert.Equal(5L, dto.Value["count"]);
+        var complex = Assert.IsType<Dictionary<string, object?>>(dto.Value["complex"]);
+        Assert.Equal(true, complex["nestedProperty"]);
+    }
+
+    [Fact]
+    public void MarshalToJson_MarshalsCustomAtsObjectDto()
+    {
+        var marshaller = CreateMarshaller();
+        var dto = CustomAtsObjectDto.Deserialize(new JsonObject
+        {
+            ["name"] = "test",
+            ["values"] = new JsonArray(1, 2, 3)
+        });
+
+        var result = marshaller.MarshalToJson(dto);
+
+        var json = Assert.IsType<JsonObject>(result);
+        Assert.Equal("test", json["name"]?.GetValue<string>());
+        Assert.Equal([1, 2, 3], json["values"]?.AsArray().Select(value => value!.GetValue<int>()));
+    }
+
+    [Fact]
+    public void UnmarshalFromJson_UsesCustomAtsConvertible()
+    {
+        var (marshaller, context) = CreateMarshallerWithContext();
+        var json = new JsonObject { ["value"] = "converted" };
+
+        var result = marshaller.UnmarshalFromJson(json, typeof(TestAtsConvertible), context);
+
+        var converted = Assert.IsType<TestAtsConvertible>(result);
+        Assert.Equal("converted", converted.Value);
     }
 
     [Fact]
@@ -1052,6 +1081,21 @@ public class AtsMarshallerTests
     private sealed class TestClass
     {
         public int Value { get; set; }
+    }
+
+    private sealed class TestAtsConvertible(string value) : IAtsConvertible<TestAtsConvertible>
+    {
+        public string Value { get; } = value;
+
+        public static TestAtsConvertible Deserialize(JsonObject jsonObject)
+        {
+            return new TestAtsConvertible(jsonObject["value"]!.GetValue<string>());
+        }
+
+        public static JsonNode? Serialize(TestAtsConvertible value)
+        {
+            return new JsonObject { ["value"] = value.Value };
+        }
     }
 
     [AspireDto]

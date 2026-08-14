@@ -19,8 +19,8 @@ public static class HostingTypeNames
     /// <summary>Full name of the AspireDtoAttribute type.</summary>
     public const string AspireDtoAttribute = "Aspire.Hosting.AspireDtoAttribute";
 
-    /// <summary>Full name of the IAtsConvertible interface.</summary>
-    public const string AtsConvertibleInterface = "Aspire.Hosting.IAtsConvertible";
+    /// <summary>Full name of the generic IAtsConvertible interface.</summary>
+    public const string AtsConvertibleInterface = "Aspire.Hosting.IAtsConvertible`1";
 
     /// <summary>Full name of the AspireValueAttribute type.</summary>
     public const string AspireValueAttribute = "Aspire.Hosting.AspireValueAttribute";
@@ -62,10 +62,24 @@ public static class HostingTypeHelpers
         IsAssignableToType(type, HostingTypeNames.ResourceInterface);
 
     /// <summary>
-    /// Determines whether the specified <paramref name="type"/> implements the IAtsConvertible interface.
+    /// Determines whether the specified <paramref name="type"/> implements the generic IAtsConvertible interface.
     /// </summary>
-    public static bool IsIAtsConvertibleType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type? type) =>
-        IsAssignableToType(type, HostingTypeNames.AtsConvertibleInterface);
+    public static bool IsAtsConvertibleType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type? type)
+    {
+        if (type is null)
+        {
+            return false;
+        }
+
+        return type.GetInterfaces().Any(implementedInterface =>
+            implementedInterface.IsGenericType &&
+            string.Equals(
+                implementedInterface.GetGenericTypeDefinition().FullName,
+                HostingTypeNames.AtsConvertibleInterface,
+                StringComparison.Ordinal) &&
+            implementedInterface.GetGenericArguments() is [var convertedType] &&
+            convertedType == type);
+    }
 
     /// <summary>
     /// Determines whether the specified <paramref name="type"/> implements the generic IResourceBuilder interface.
