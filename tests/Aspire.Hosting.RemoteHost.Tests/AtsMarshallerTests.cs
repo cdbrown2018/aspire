@@ -29,6 +29,7 @@ public class AtsMarshallerTests
                 new AtsDtoTypeInfo { TypeId = "test/DtoWithJsonIgnore", Name = "DtoWithJsonIgnore", ClrType = typeof(DtoWithJsonIgnore), Properties = [] },
                 new AtsDtoTypeInfo { TypeId = "test/DtoWithReadOnlyProperty", Name = "DtoWithReadOnlyProperty", ClrType = typeof(DtoWithReadOnlyProperty), Properties = [] },
                 new AtsDtoTypeInfo { TypeId = "test/DtoWithInitListProperties", Name = "DtoWithInitListProperties", ClrType = typeof(DtoWithInitListProperties), Properties = [] },
+                new AtsDtoTypeInfo { TypeId = "test/DtoWithAtsConvertible", Name = "DtoWithAtsConvertible", ClrType = typeof(DtoWithAtsConvertible), Properties = [] },
             ],
             EnumTypes = []
         };
@@ -797,6 +798,25 @@ public class AtsMarshallerTests
     }
 
     [Fact]
+    public void MarshalToJson_RoundTripsAtsConvertibleNestedInDto()
+    {
+        var (marshaller, context) = CreateMarshallerWithContext();
+        var json = new JsonObject
+        {
+            ["payload"] = new JsonObject
+            {
+                ["$handle"] = "literal-handle",
+                ["name"] = "nested"
+            }
+        };
+
+        var unmarshalled = marshaller.UnmarshalFromJson(json, typeof(DtoWithAtsConvertible), context);
+        var result = marshaller.MarshalToJson(unmarshalled);
+
+        Assert.Equal(json.ToJsonString(), result?.ToJsonString());
+    }
+
+    [Fact]
     public void MarshalToJson_MarshalsDto()
     {
         var marshaller = CreateMarshaller();
@@ -1103,6 +1123,12 @@ public class AtsMarshallerTests
     {
         public string? Name { get; set; }
         public int Count { get; set; }
+    }
+
+    [AspireDto]
+    private sealed class DtoWithAtsConvertible
+    {
+        public required CustomAtsObjectDto Payload { get; init; }
     }
 
     [AspireDto]

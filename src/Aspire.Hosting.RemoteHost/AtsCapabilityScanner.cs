@@ -2371,10 +2371,10 @@ public static class AtsCapabilityScanner
             return AtsConstants.Any;
         }
 
-        // Converter types are intentionally represented by the guest language's native object type.
+        // Converter types accept JSON objects, so expose them as native read-only maps in guest languages.
         if (HostingTypeHelpers.IsAtsConvertibleType(type))
         {
-            return AtsConstants.Any;
+            return AtsConstants.DictTypeId(AtsConstants.String, AtsConstants.Any);
         }
 
         if (type == typeof(IDictionary))
@@ -2686,10 +2686,18 @@ public static class AtsCapabilityScanner
             return new AtsTypeRef { TypeId = AtsConstants.Any, ClrType = type, Category = AtsTypeCategory.Primitive };
         }
 
-        // Converter types are intentionally represented by the guest language's native object type.
+        // Converter types accept JSON objects, so expose them as native read-only maps in guest languages.
         if (HostingTypeHelpers.IsAtsConvertibleType(type))
         {
-            return new AtsTypeRef { TypeId = AtsConstants.Any, ClrType = type, Category = AtsTypeCategory.Primitive };
+            return new AtsTypeRef
+            {
+                TypeId = AtsConstants.DictTypeId(AtsConstants.String, AtsConstants.Any),
+                ClrType = type,
+                Category = AtsTypeCategory.Dict,
+                KeyType = new AtsTypeRef { TypeId = AtsConstants.String, ClrType = typeof(string), Category = AtsTypeCategory.Primitive },
+                ValueType = new AtsTypeRef { TypeId = AtsConstants.Any, ClrType = typeof(object), Category = AtsTypeCategory.Primitive },
+                IsReadOnly = true
+            };
         }
 
         if (type == typeof(IDictionary))

@@ -767,6 +767,12 @@ internal sealed class CapabilityDispatcher
                 unionMemberTypes);
         }
 
+        // Let converters interpret protocol-shaped keys such as "$handle" as ordinary payload data.
+        if (HostingTypeHelpers.IsAtsConvertibleType(parameterType))
+        {
+            return _marshaller.UnmarshalFromJson(argNode, parameterType, context);
+        }
+
         var handleRef = HandleRef.FromJsonNode(argNode);
         if (handleRef is null)
         {

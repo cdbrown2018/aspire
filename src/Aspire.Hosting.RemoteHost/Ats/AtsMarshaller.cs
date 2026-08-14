@@ -61,7 +61,7 @@ internal sealed class AtsMarshaller
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new JsonStringEnumConverter() },
+        Converters = { new JsonStringEnumConverter(), new AtsConvertibleJsonConverterFactory() },
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
         TypeInfoResolver = new DefaultJsonTypeInfoResolver()
     };
@@ -368,6 +368,53 @@ internal sealed class AtsMarshaller
         }
     }
 
+    private sealed class AtsConvertibleJsonConverterFactory : JsonConverterFactory
+    {
+        public override bool CanConvert(Type typeToConvert)
+        {
+            return HostingTypeHelpers.IsAtsConvertibleType(typeToConvert);
+        }
+
+        public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+        {
+            return (JsonConverter)Activator.CreateInstance(typeof(AtsConvertibleJsonConverter<>).MakeGenericType(typeToConvert))!;
+        }
+    }
+
+    private sealed class AtsConvertibleJsonConverter<T> : JsonConverter<T>
+    {
+        public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var node = JsonNode.Parse(ref reader);
+            if (node is not JsonObject jsonObject)
+            {
+                throw new JsonException($"ATS convertible type '{typeToConvert.Name}' requires a JSON object.");
+            }
+
+            try
+            {
+                return (T)DeserializeAtsConvertibleCore(jsonObject, typeToConvert);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new JsonException(ex.Message, ex);
+            }
+        }
+
+        public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+        {
+            var node = SerializeAtsConvertible(value!, typeof(T));
+            if (node is null)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                node.WriteTo(writer, options);
+            }
+        }
+    }
+
     private JsonNode? SerializeArray(object value, AtsTypeRef? elementType)
     {
         var jsonArray = new JsonArray();
@@ -529,6 +576,18 @@ internal sealed class AtsMarshaller
         var capabilityId = context.CapabilityId ?? "unknown";
         var paramName = context.ParameterName ?? "unknown";
 
+        // Converter payloads own the entire JSON object, including keys that resemble ATS protocol metadata.
+        if (HostingTypeHelpers.IsAtsConvertibleType(targetType))
+        {
+            if (node is not JsonObject jsonObject)
+            {
+                throw CapabilityException.TypeMismatch(
+                    capabilityId, paramName, "object", DescribeJsonNode(node));
+            }
+
+            return DeserializeAtsConvertible(jsonObject, targetType, capabilityId, paramName);
+        }
+
         // Check for handle reference
         var handleRef = HandleRef.FromJsonNode(node);
         if (handleRef != null)
@@ -664,11 +723,6 @@ internal sealed class AtsMarshaller
                     }
                 }
 
-                if (HostingTypeHelpers.IsAtsConvertibleType(targetType))
-                {
-                    return DeserializeAtsConvertible(jsonObj, targetType, capabilityId, paramName);
-                }
-
                 // DTOs - must have [AspireDto] attribute
                 if (!AttributeDataReader.HasAspireDtoData(targetType))
                 {
@@ -700,14 +754,27 @@ internal sealed class AtsMarshaller
 
     private static object DeserializeAtsConvertible(JsonObject jsonObject, Type targetType, string capabilityId, string paramName)
     {
+        try
+        {
+            return DeserializeAtsConvertibleCore(jsonObject, targetType);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw CapabilityException.InvalidArgument(
+                capabilityId,
+                paramName,
+                ex.Message);
+        }
+    }
+
+    private static object DeserializeAtsConvertibleCore(JsonObject jsonObject, Type targetType)
+    {
         // RemoteHost is compiled into the generated managed AppHost and loads integration assemblies dynamically.
         // The Native AOT CLI only orchestrates that process, so reflection is required here and is not trimmed by the CLI.
         var method = FindAtsConversionMethod(targetType, AtsDeserializeMethodName, typeof(JsonObject), targetType);
         if (method is null)
         {
-            throw CapabilityException.InvalidArgument(
-                capabilityId,
-                paramName,
+            throw new InvalidOperationException(
                 $"Type '{targetType.Name}' implements IAtsConvertible but does not expose Deserialize(JsonObject).");
         }
 
@@ -716,9 +783,7 @@ internal sealed class AtsMarshaller
             var result = method.Invoke(null, [jsonObject]);
             if (result is null || !targetType.IsInstanceOfType(result))
             {
-                throw CapabilityException.InvalidArgument(
-                    capabilityId,
-                    paramName,
+                throw new InvalidOperationException(
                     $"Type '{targetType.Name}' returned an incompatible value from Deserialize(JsonObject).");
             }
 
@@ -726,10 +791,9 @@ internal sealed class AtsMarshaller
         }
         catch (TargetInvocationException ex)
         {
-            throw CapabilityException.InvalidArgument(
-                capabilityId,
-                paramName,
-                $"Failed to deserialize '{paramName}' as {targetType.Name}: {(ex.InnerException ?? ex).Message}");
+            throw new InvalidOperationException(
+                $"Failed to deserialize ATS convertible type '{targetType.FullName}'.",
+                ex.InnerException ?? ex);
         }
     }
 
