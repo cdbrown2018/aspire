@@ -232,6 +232,8 @@ public static class KubernetesPersistentVolumeExtensions
     /// <remarks>
     /// This callback runs when the Kubernetes manifest is generated and can be used to set
     /// properties that are not exposed by the other persistent volume configuration methods.
+    /// Changing <c>claim.Metadata.Name</c> changes the identity of the generated PVC; if you
+    /// do so, ensure that any workload references are updated accordingly.
     /// </remarks>
     [AspireExport]
     public static IResourceBuilder<KubernetesPersistentVolumeResource> WithConfiguration(
