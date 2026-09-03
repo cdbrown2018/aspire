@@ -82,7 +82,10 @@ public static class KubernetesPersistentVolumeExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrEmpty(storageClassName);
 
-        builder.Resource.StorageClassName = ReferenceExpression.Create($"{storageClassName}");
+        builder.WithAnnotation(
+            new KubernetesPersistentVolumeStorageClassAnnotation(omitStorageClassName: false, ReferenceExpression.Create($"{storageClassName}")),
+            ResourceAnnotationMutationBehavior.Replace
+        );
         return builder;
     }
 
@@ -103,8 +106,29 @@ public static class KubernetesPersistentVolumeExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(storageClassName);
 
-        builder.Resource.StorageClassName = ReferenceExpression.Create($"{storageClassName.Resource}");
+        builder.WithAnnotation(
+            new KubernetesPersistentVolumeStorageClassAnnotation(omitStorageClassName: false, ReferenceExpression.Create($"{storageClassName.Resource}")),
+            ResourceAnnotationMutationBehavior.Replace
+        );
+
         return builder;
+    }
+
+    /// <summary>
+    /// Explicitly configures the omission of the Kubernetes storage class name.
+    /// </summary>
+    /// <ats-summary>Explicitly configures the omission of the Kubernetes storage class name.</ats-summary>
+    /// <param name="builder">The persistent volume resource builder.</param>
+    /// <returns>The same builder for chaining.</returns>
+    [AspireExport]
+    public static IResourceBuilder<KubernetesPersistentVolumeResource> WithoutStorageClass(
+        this IResourceBuilder<KubernetesPersistentVolumeResource> builder) 
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        
+        return builder.WithAnnotation(
+            new KubernetesPersistentVolumeStorageClassAnnotation(omitStorageClassName: true, storageClassName: null),
+            ResourceAnnotationMutationBehavior.Replace);
     }
 
     /// <summary>

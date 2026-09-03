@@ -1042,18 +1042,7 @@ public sealed class KubernetesEnvironmentResource : Resource, IComputeEnvironmen
             claim.Spec.VolumeName = await ResolveExpressionAsync(volumeNameExpression, volumeResource.Name, cancellationToken).ConfigureAwait(false);
         }
 
-        if (volumeResource.StorageClassName is { } storageClassExpression)
-        {
-            var storageClass = await ResolveExpressionAsync(storageClassExpression, volumeResource.Name, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(storageClass))
-            {
-                claim.Spec.StorageClassName = storageClass;
-            }
-        }
-        else if (!string.IsNullOrEmpty(DefaultStorageClassName))
-        {
-            claim.Spec.StorageClassName = DefaultStorageClassName;
-        }
+        claim.Spec.StorageClassName = (await ResolveStorageClassExpression(volumeResource, cancellationToken).ConfigureAwait(false))!;
 
         foreach (var annotation in volumeResource.Annotations.OfType<KubernetesPersistentVolumeCustomizationAnnotation>())
         {
@@ -1061,6 +1050,25 @@ public sealed class KubernetesEnvironmentResource : Resource, IComputeEnvironmen
         }
 
         return claim;
+    }
+
+    private async Task<string?> ResolveStorageClassExpression(KubernetesPersistentVolumeResource volumeResource, CancellationToken cancellationToken)
+    {
+        var resolvedStorageClass = DefaultStorageClassName;
+
+        if (volumeResource.TryGetLastAnnotation<KubernetesPersistentVolumeStorageClassAnnotation>(out var annotation) && annotation.OmitStorageClassName)
+        {
+            resolvedStorageClass = null;
+        }
+        else if (annotation?.StorageClassName is { } storageClassExpression)
+        {
+            var storageClass = await ResolveExpressionAsync(storageClassExpression, volumeResource.Name, cancellationToken).ConfigureAwait(false);
+            resolvedStorageClass = string.IsNullOrWhiteSpace(storageClass) ? null : storageClass;
+        }
+
+        resolvedStorageClass = resolvedStorageClass == "" ? null : resolvedStorageClass;
+
+        return resolvedStorageClass;
     }
 
     private async Task BuildGatewayObjects(
