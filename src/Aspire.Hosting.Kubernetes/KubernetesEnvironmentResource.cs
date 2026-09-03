@@ -1037,6 +1037,11 @@ public sealed class KubernetesEnvironmentResource : Resource, IComputeEnvironmen
             : DefaultStorageSize;
         claim.Spec.Resources.Requests.Add("storage", capacity);
 
+        if (volumeResource.PersistentVolumeName is { } volumeNameExpression)
+        {
+            claim.Spec.VolumeName = await ResolveExpressionAsync(volumeNameExpression, volumeResource.Name, cancellationToken).ConfigureAwait(false);
+        }
+
         if (volumeResource.StorageClassName is { } storageClassExpression)
         {
             var storageClass = await ResolveExpressionAsync(storageClassExpression, volumeResource.Name, cancellationToken).ConfigureAwait(false);

@@ -93,6 +93,11 @@ public sealed class KubernetesPersistentVolumeResource(
     internal ReferenceExpression? Capacity { get; set; }
 
     /// <summary>
+    /// Gets or sets the name of the existing PersistentVolume to bind to.
+    /// </summary>
+    internal ReferenceExpression? PersistentVolumeName { get; set; }
+
+    /// <summary>
     /// Gets the access modes configured for the volume. When empty, falls back to
     /// <see cref="KubernetesEnvironmentResource.DefaultStorageReadWritePolicy"/>.
     /// </summary>

@@ -149,6 +149,25 @@ public static class KubernetesPersistentVolumeExtensions
     }
 
     /// <summary>
+    /// Sets the name of the existing PersistentVolume to bind to in the generated PVC's
+    /// <c>spec.volumeName</c>.
+    /// </summary>
+    /// <param name="builder">The persistent volume resource builder.</param>
+    /// <param name="persistentVolumeName">The name of the existing PersistentVolume.</param>
+    /// <returns>The same builder for chaining.</returns>
+    [AspireExport]
+    public static IResourceBuilder<KubernetesPersistentVolumeResource> WithPersistentVolumeName(
+        this IResourceBuilder<KubernetesPersistentVolumeResource> builder,
+        string persistentVolumeName)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrEmpty(persistentVolumeName);
+
+        builder.Resource.PersistentVolumeName = ReferenceExpression.Create($"{persistentVolumeName}");
+        return builder;
+    }
+
+    /// <summary>
     /// Adds an access mode to the PVC's <c>spec.accessModes</c>. Call multiple times
     /// to declare more than one mode. When unset, the environment's
     /// <see cref="KubernetesEnvironmentResource.DefaultStorageReadWritePolicy"/> is
@@ -235,7 +254,7 @@ public static class KubernetesPersistentVolumeExtensions
     /// Changing <c>claim.Metadata.Name</c> changes the identity of the generated PVC; if you
     /// do so, ensure that any workload references are updated accordingly.
     /// </remarks>
-    [AspireExport]
+    [AspireExportIgnore(Reason = "The callback exposes C#-only Kubernetes manifest types; use With* for polyglot configuration.")]
     public static IResourceBuilder<KubernetesPersistentVolumeResource> WithConfiguration(
         this IResourceBuilder<KubernetesPersistentVolumeResource> builder,
         Action<PersistentVolumeClaim> configure)

@@ -1065,7 +1065,7 @@ public class AtsTypeScriptCodeGeneratorTests
     }
 
     [Fact]
-    public void Generate_KubernetesPersistentVolume_WithConfigurationExposesCallback()
+    public void Generate_KubernetesPersistentVolume_WithPersistentVolumeNameExposesCapability()
     {
         var scanResult = AtsCapabilityScanner.ScanAssemblies(
         [
@@ -1077,19 +1077,15 @@ public class AtsTypeScriptCodeGeneratorTests
 
         var capability = Assert.Single(
             scanResult.Capabilities,
-            c => c.CapabilityId == "Aspire.Hosting.Kubernetes/withConfiguration");
-        Assert.Equal("withConfiguration", capability.MethodName);
-        AssertCallbackParameterTypes(
-            capability,
-            "configure",
-            typeof(global::Aspire.Hosting.Kubernetes.Resources.PersistentVolumeClaim));
-        Assert.Equal("void", capability.Parameters.Single(p => p.Name == "configure").CallbackReturnType?.TypeId);
+            c => c.CapabilityId == "Aspire.Hosting.Kubernetes/withPersistentVolumeName");
+        Assert.Equal("withPersistentVolumeName", capability.MethodName);
+        Assert.Equal("string", capability.Parameters.Single().Type?.TypeId);
+        Assert.DoesNotContain("withConfiguration", generatedCode);
 
         Assert.Contains(
             generatedCode.Split('\n'),
-            line => line.Contains("withConfiguration(", StringComparison.Ordinal) &&
-                line.Contains("PersistentVolumeClaim", StringComparison.Ordinal) &&
-                line.Contains("Promise<void>", StringComparison.Ordinal));
+            line => line.Contains("withPersistentVolumeName(", StringComparison.Ordinal) &&
+                line.Contains("persistentVolumeName: string", StringComparison.Ordinal));
     }
 
     // ===== 2-Pass Scanning / Cross-Assembly Expansion Tests =====

@@ -1733,6 +1733,7 @@ public class KubernetesPublisherTests(ITestOutputHelper outputHelper)
 
         var k8s = builder.AddKubernetesEnvironment("env");
         var data = k8s.AddPersistentVolume("data")
+            .WithPersistentVolumeName("existing-volume")
             .WithConfiguration(claim =>
             {
                 claim.Metadata.Labels["example.com/retention"] = "retain";
@@ -1753,8 +1754,7 @@ public class KubernetesPublisherTests(ITestOutputHelper outputHelper)
         var claimPath = Path.Combine(workspace.Path, "templates", "data", "data.yaml");
         Assert.True(File.Exists(claimPath));
         var content = await File.ReadAllTextAsync(claimPath);
-        Assert.Contains("retention: \"retain\"", content);
-        Assert.Contains("volumeMode: \"Block\"", content);
+        await Verify(content, "yaml");
     }
 
     [Fact]
