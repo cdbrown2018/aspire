@@ -18,5 +18,5 @@ public sealed class KubernetesPersistentVolumeCustomizationAnnotation(Action<Per
     /// <summary>
     /// Gets the configuration action for customizing the persistent volume claim.
     /// </summary>
-    public Action<PersistentVolumeClaim> Configure { get; set; } = configure;
+    public Action<PersistentVolumeClaim> Configure { get; } = configure ?? throw new ArgumentNullException(nameof(configure));
 }
