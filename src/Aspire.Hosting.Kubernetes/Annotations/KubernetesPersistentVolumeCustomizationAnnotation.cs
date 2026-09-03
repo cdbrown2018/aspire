@@ -13,7 +13,7 @@ namespace Aspire.Hosting.Kubernetes.Annotations;
 /// Initializes a new instance of the <see cref="KubernetesPersistentVolumeCustomizationAnnotation"/> class.
 /// </remarks>
 /// <param name="configure">The configuration action for customizing the persistent volume claim.</param>
-public sealed class KubernetesPersistentVolumeCustomizationAnnotation(Action<PersistentVolumeClaim> configure) : IResourceAnnotation
+internal sealed class KubernetesPersistentVolumeCustomizationAnnotation(Action<PersistentVolumeClaim> configure) : IResourceAnnotation
 {
     /// <summary>
     /// Gets the configuration action for customizing the persistent volume claim.
