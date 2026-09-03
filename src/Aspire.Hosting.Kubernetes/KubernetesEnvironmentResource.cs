@@ -9,6 +9,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Dcp.Process;
+using Aspire.Hosting.Kubernetes.Annotations;
 using Aspire.Hosting.Kubernetes.Extensions;
 using Aspire.Hosting.Kubernetes.Resources;
 using Aspire.Hosting.Pipelines;
@@ -1047,6 +1048,11 @@ public sealed class KubernetesEnvironmentResource : Resource, IComputeEnvironmen
         else if (!string.IsNullOrEmpty(DefaultStorageClassName))
         {
             claim.Spec.StorageClassName = DefaultStorageClassName;
+        }
+
+        foreach (var annotation in volumeResource.Annotations.OfType<KubernetesPersistentVolumeCustomizationAnnotation>())
+        {
+            annotation.Configure(claim);
         }
 
         return claim;

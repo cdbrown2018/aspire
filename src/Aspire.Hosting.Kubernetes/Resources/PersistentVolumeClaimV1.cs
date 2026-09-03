@@ -15,6 +15,7 @@ namespace Aspire.Hosting.Kubernetes.Resources;
 /// This class encapsulates the specification and metadata of a PersistentVolumeClaim resource.
 /// </remarks>
 [YamlSerializable]
+[AspireExport(ExposeProperties = true)]
 public sealed class PersistentVolumeClaim() : BaseKubernetesResource("v1", "PersistentVolumeClaim")
 {
     /// <summary>

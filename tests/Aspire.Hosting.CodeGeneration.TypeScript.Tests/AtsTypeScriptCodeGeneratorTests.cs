@@ -1064,6 +1064,34 @@ public class AtsTypeScriptCodeGeneratorTests
                     StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Generate_KubernetesPersistentVolume_WithConfigurationExposesCallback()
+    {
+        var scanResult = AtsCapabilityScanner.ScanAssemblies(
+        [
+            typeof(DistributedApplication).Assembly,
+            typeof(global::Aspire.Hosting.Kubernetes.KubernetesPersistentVolumeResource).Assembly
+        ]);
+        var files = _generator.GenerateDistributedApplication(scanResult.ToAtsContext());
+        var generatedCode = files["aspire.mts"];
+
+        var capability = Assert.Single(
+            scanResult.Capabilities,
+            c => c.CapabilityId == "Aspire.Hosting.Kubernetes/withConfiguration");
+        Assert.Equal("withConfiguration", capability.MethodName);
+        AssertCallbackParameterTypes(
+            capability,
+            "configure",
+            typeof(global::Aspire.Hosting.Kubernetes.Resources.PersistentVolumeClaim));
+        Assert.Equal("void", capability.Parameters.Single(p => p.Name == "configure").CallbackReturnType?.TypeId);
+
+        Assert.Contains(
+            generatedCode.Split('\n'),
+            line => line.Contains("withConfiguration(", StringComparison.Ordinal) &&
+                line.Contains("PersistentVolumeClaim", StringComparison.Ordinal) &&
+                line.Contains("Promise<void>", StringComparison.Ordinal));
+    }
+
     // ===== 2-Pass Scanning / Cross-Assembly Expansion Tests =====
 
     [Fact]

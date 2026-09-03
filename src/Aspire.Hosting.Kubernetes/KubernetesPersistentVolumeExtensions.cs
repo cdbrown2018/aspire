@@ -7,6 +7,7 @@ using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Kubernetes;
 using Aspire.Hosting.Kubernetes.Annotations;
 using Aspire.Hosting.Kubernetes.Extensions;
+using Aspire.Hosting.Kubernetes.Resources;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Aspire.Hosting;
@@ -219,6 +220,28 @@ public static class KubernetesPersistentVolumeExtensions
         ArgumentNullException.ThrowIfNull(value);
 
         builder.Resource.VolumeAnnotations[key] = ReferenceExpression.Create($"{value.Resource}");
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures the Kubernetes PersistentVolumeClaim generated for the persistent volume.
+    /// </summary>
+    /// <param name="builder">The persistent volume resource builder.</param>
+    /// <param name="configure">The action used to configure the generated persistent volume claim.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <remarks>
+    /// This callback runs when the Kubernetes manifest is generated and can be used to set
+    /// properties that are not exposed by the other persistent volume configuration methods.
+    /// </remarks>
+    [AspireExport]
+    public static IResourceBuilder<KubernetesPersistentVolumeResource> WithConfiguration(
+        this IResourceBuilder<KubernetesPersistentVolumeResource> builder,
+        Action<PersistentVolumeClaim> configure)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        builder.WithAnnotation(new KubernetesPersistentVolumeCustomizationAnnotation(configure));
         return builder;
     }
 
