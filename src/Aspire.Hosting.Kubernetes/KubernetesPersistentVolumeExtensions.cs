@@ -69,7 +69,6 @@ public static class KubernetesPersistentVolumeExtensions
     /// <c>spec.storageClassName</c>. When unset, the cluster's default storage class
     /// is used. An empty string explicitly disables storage class assignment.
     /// </summary>
-    /// <ats-summary>Sets the storage class for a persistent volume</ats-summary>
     /// <param name="builder">The persistent volume resource builder.</param>
     /// <param name="storageClassName">The storage class name (e.g.
     /// <c>"managed-csi"</c>, <c>"gp3"</c>).</param>
