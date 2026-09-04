@@ -82,7 +82,10 @@ public static class KubernetesPersistentVolumeExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(storageClassName);
 
-        builder.Resource.StorageClassName = ReferenceExpression.Create($"{storageClassName}");
+        builder.WithAnnotation(
+            new KubernetesPersistentVolumeStorageClassAnnotation(omitStorageClassName: false, ReferenceExpression.Create($"{storageClassName}")),
+            ResourceAnnotationMutationBehavior.Replace
+        );
         return builder;
     }
 
@@ -103,7 +106,11 @@ public static class KubernetesPersistentVolumeExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(storageClassName);
 
-        builder.Resource.StorageClassName = ReferenceExpression.Create($"{storageClassName.Resource}");
+        builder.WithAnnotation(
+            new KubernetesPersistentVolumeStorageClassAnnotation(omitStorageClassName: false, ReferenceExpression.Create($"{storageClassName.Resource}")),
+            ResourceAnnotationMutationBehavior.Replace
+        );
+
         return builder;
     }
 

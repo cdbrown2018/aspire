@@ -1905,6 +1905,36 @@ public class KubernetesPublisherTests(ITestOutputHelper outputHelper)
     }
 
     [Fact]
+    public async Task PublishAsync_WithFirstClassPersistentVolume_StorageClassConfigurationControlsGeneratedClaim()
+    {
+        using var workspace = TemporaryWorkspace.Create(outputHelper);
+        var builder = TestDistributedApplicationBuilder.Create(DistributedApplicationOperation.Publish, workspace.Path);
+
+        var k8s = builder.AddKubernetesEnvironment("env")
+            .WithProperties(environment => environment.DefaultStorageClassName = "default-class");
+
+        var defaultVolume = k8s.AddPersistentVolume("default");
+        var explicitVolume = k8s.AddPersistentVolume("explicit")
+            .WithStorageClass("explicit-class");
+        var omittedVolume = k8s.AddPersistentVolume("omitted")
+            .WithoutStorageClass();
+
+        builder.AddContainer("default-service", "nginx")
+            .WithPersistentVolume(defaultVolume, "/data");
+        builder.AddContainer("explicit-service", "nginx")
+            .WithPersistentVolume(explicitVolume, "/data");
+        builder.AddContainer("omitted-service", "nginx")
+            .WithPersistentVolume(omittedVolume, "/data");
+
+        var app = builder.Build();
+        app.Run();
+
+        Assert.Equal("default-class", ReadStorageClassName(workspace.Path, "default"));
+        Assert.Equal("explicit-class", ReadStorageClassName(workspace.Path, "explicit"));
+        Assert.Null(ReadStorageClassName(workspace.Path, "omitted"));
+    }
+
+    [Fact]
     public async Task PublishAsync_WithPersistentVolumeEnvironment_OnContainerAndExecutable()
     {
         using var workspace = TemporaryWorkspace.Create(outputHelper);
@@ -2153,6 +2183,19 @@ public class KubernetesPublisherTests(ITestOutputHelper outputHelper)
             new System.Text.RegularExpressions.Regex(@"parameters:[\s\S]+data:[\s\S]+" +
                 System.Text.RegularExpressions.Regex.Escape(backupTierName) + @"\s*:"),
             valuesContent);
+    }
+    private static string? ReadStorageClassName(string workspacePath, string volumeName)
+    {
+        var claimPath = Path.Combine(workspacePath, "templates", volumeName, $"{volumeName}.yaml");
+        var yaml = new YamlStream();
+        using var reader = new StringReader(File.ReadAllText(claimPath));
+        yaml.Load(reader);
+
+        var root = (YamlMappingNode)yaml.Documents[0].RootNode;
+        var spec = (YamlMappingNode)root["spec"];
+        return spec.Children.TryGetValue("storageClassName", out var storageClass)
+            ? ((YamlScalarNode)storageClass).Value
+            : null;
     }
 
     /// <summary>
