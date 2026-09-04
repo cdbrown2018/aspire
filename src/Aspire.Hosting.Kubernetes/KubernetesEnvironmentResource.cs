@@ -1069,6 +1069,10 @@ public sealed class KubernetesEnvironmentResource : Resource, IComputeEnvironmen
             else
             {
                 storageClassName = await ResolveExpressionAsync(storageClassExpression, volumeResource.Name, cancellationToken).ConfigureAwait(false);
+                if (storageClassName is { Length: > 0} && string.IsNullOrWhiteSpace(storageClassName))
+                {
+                    storageClassName = null;
+                }
             }
         }
         else if (DefaultStorageClassName == "")

@@ -179,6 +179,10 @@ public static class KubernetesPersistentVolumeExtensions
     /// <param name="builder">The persistent volume resource builder.</param>
     /// <param name="persistentVolumeName">The name of the existing PersistentVolume.</param>
     /// <returns>The same builder for chaining.</returns>
+    /// <remarks>
+    /// The named PersistentVolume must satisfy the claim's storage class, access modes, and requested capacity; otherwise, the claim remains unbound.
+    /// Configure these values to match the existing volume.
+    /// </remarks>
     [AspireExport]
     public static IResourceBuilder<KubernetesPersistentVolumeResource> WithPersistentVolumeName(
         this IResourceBuilder<KubernetesPersistentVolumeResource> builder,
@@ -278,6 +282,16 @@ public static class KubernetesPersistentVolumeExtensions
     /// Changing <c>claim.Metadata.Name</c> changes the identity of the generated PVC; if you
     /// do so, ensure that any workload references are updated accordingly.
     /// </remarks>
+    /// <example>
+    /// <code>
+    /// var data = k8s.AddPersistentVolume("data")
+    ///     .WithConfiguration(claim =>
+    ///     {
+    ///         claim.Metadata.Labels["example.com/retention"] = "retain";
+    ///         claim.Spec.VolumeMode = "Block";
+    ///     });
+    /// </code>
+    /// </example>
     [AspireExportIgnore(Reason = "The callback exposes C#-only Kubernetes manifest types; use With* for polyglot configuration.")]
     public static IResourceBuilder<KubernetesPersistentVolumeResource> WithConfiguration(
         this IResourceBuilder<KubernetesPersistentVolumeResource> builder,
