@@ -1783,26 +1783,11 @@ public class KubernetesPublisherTests(ITestOutputHelper outputHelper)
         Assert.True(File.Exists(omittedClaimPath));
         Assert.True(File.Exists(emptyClaimPath));
 
-        var omittedYaml = new YamlStream();
-        using (var omittedReader = new StringReader(await File.ReadAllTextAsync(omittedClaimPath)))
-        {
-            omittedYaml.Load(omittedReader);
-        }
+        var omittedClaim = await File.ReadAllTextAsync(omittedClaimPath);
+        var emptyClaim = await File.ReadAllTextAsync(emptyClaimPath);
 
-        var omittedRoot = Assert.IsType<YamlMappingNode>(omittedYaml.Documents[0].RootNode);
-        var omittedSpec = Assert.IsType<YamlMappingNode>(omittedRoot.Children.Single(entry => entry.Key is YamlScalarNode { Value: "spec" }).Value);
-        Assert.DoesNotContain(omittedSpec.Children, entry => entry.Key is YamlScalarNode { Value: "storageClassName" });
-
-        var emptyYaml = new YamlStream();
-        using (var emptyReader = new StringReader(await File.ReadAllTextAsync(emptyClaimPath)))
-        {
-            emptyYaml.Load(emptyReader);
-        }
-
-        var emptyRoot = Assert.IsType<YamlMappingNode>(emptyYaml.Documents[0].RootNode);
-        var emptySpec = Assert.IsType<YamlMappingNode>(emptyRoot.Children.Single(entry => entry.Key is YamlScalarNode { Value: "spec" }).Value);
-        var storageClassName = Assert.IsType<YamlScalarNode>(emptySpec.Children.Single(entry => entry.Key is YamlScalarNode { Value: "storageClassName" }).Value);
-        Assert.Equal(string.Empty, storageClassName.Value);
+        await Verify(omittedClaim, "yaml")
+            .AppendContentAsFile(emptyClaim, "yaml");
     }
 
     [Fact]
