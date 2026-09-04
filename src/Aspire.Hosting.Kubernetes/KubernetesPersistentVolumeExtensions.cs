@@ -115,7 +115,8 @@ public static class KubernetesPersistentVolumeExtensions
     }
 
     /// <summary>
-    /// Omits the storage class from the generated PVC.
+    /// Omits <c>spec.storageClassName</c> from the generated PVC so Kubernetes can assign the cluster's default StorageClass.
+    /// To request a classless volume, call <see cref="WithStorageClass(IResourceBuilder{KubernetesPersistentVolumeResource}, string)"/> with an empty string.
     /// </summary>
     /// <param name="builder">The persistent volume resource builder.</param>
     /// <returns>The same builder for chaining.</returns>

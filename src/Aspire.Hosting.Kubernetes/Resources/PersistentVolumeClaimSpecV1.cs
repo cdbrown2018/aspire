@@ -40,9 +40,10 @@ public sealed class PersistentVolumeClaimSpecV1
     /// provisioning or volume binding for the associated PersistentVolumeClaim. Setting this property
     /// allows the claim to specifically request a volume of a particular storage class. It should match
     /// the name of an existing StorageClass in the Kubernetes cluster.
-    /// If set to null, it indicates that the default StorageClass configured in the cluster
-    /// will be used. If no default StorageClass is configured and this value is not set, the claim cannot
-    /// be dynamically provisioned.
+    /// If set to <see langword="null"/>, Kubernetes can assign the cluster's default StorageClass.
+    /// If set to an empty string, the claim requests no StorageClass and can bind only to volumes
+    /// whose <c>storageClassName</c> is also empty. If no default StorageClass is configured and
+    /// this value is not set, the claim cannot be dynamically provisioned.
     /// </remarks>
     [YamlMember(Alias = "storageClassName")]
     [PreserveEmptyString]
