@@ -287,7 +287,7 @@ public static class KubernetesPersistentVolumeExtensions
     ///     .WithConfiguration(claim =>
     ///     {
     ///         claim.Metadata.Labels["example.com/retention"] = "retain";
-    ///         claim.Spec.VolumeMode = "Block";
+    ///         claim.Spec.VolumeMode = "Filesystem";
     ///     });
     /// </code>
     /// </example>

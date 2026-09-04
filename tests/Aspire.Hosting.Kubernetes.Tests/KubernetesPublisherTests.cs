@@ -1737,7 +1737,7 @@ public class KubernetesPublisherTests(ITestOutputHelper outputHelper)
             .WithConfiguration(claim =>
             {
                 claim.Metadata.Labels["example.com/retention"] = "retain";
-                claim.Spec.VolumeMode = "Block";
+                claim.Spec.VolumeMode = "Filesystem";
             });
 
         builder.AddContainer("service", "nginx")
@@ -1749,7 +1749,7 @@ public class KubernetesPublisherTests(ITestOutputHelper outputHelper)
         Assert.NotNull(data.Resource.GeneratedClaim);
         var claim = data.Resource.GeneratedClaim!;
         Assert.Equal("retain", claim.Metadata.Labels["example.com/retention"]);
-        Assert.Equal("Block", claim.Spec.VolumeMode);
+        Assert.Equal("Filesystem", claim.Spec.VolumeMode);
 
         var claimPath = Path.Combine(workspace.Path, "templates", "data", "data.yaml");
         Assert.True(File.Exists(claimPath));

@@ -6,7 +6,7 @@ metadata:
   labels:
     example.com/retention: "retain"
 spec:
-  volumeMode: "Block"
+  volumeMode: "Filesystem"
   volumeName: "existing-volume"
   accessModes:
     - "ReadWriteOnce"
