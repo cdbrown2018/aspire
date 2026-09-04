@@ -67,7 +67,7 @@ public static class KubernetesPersistentVolumeExtensions
     /// <summary>
     /// Sets the Kubernetes storage class name on the PVC's
     /// <c>spec.storageClassName</c>. When unset, the cluster's default storage class
-    /// is used.
+    /// is used. An empty string explicitly disables storage class assignment.
     /// </summary>
     /// <ats-summary>Sets the storage class for a persistent volume</ats-summary>
     /// <param name="builder">The persistent volume resource builder.</param>
@@ -80,7 +80,7 @@ public static class KubernetesPersistentVolumeExtensions
         string storageClassName)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        ArgumentException.ThrowIfNullOrEmpty(storageClassName);
+        ArgumentNullException.ThrowIfNull(storageClassName);
 
         builder.Resource.StorageClassName = ReferenceExpression.Create($"{storageClassName}");
         return builder;
@@ -104,6 +104,22 @@ public static class KubernetesPersistentVolumeExtensions
         ArgumentNullException.ThrowIfNull(storageClassName);
 
         builder.Resource.StorageClassName = ReferenceExpression.Create($"{storageClassName.Resource}");
+        return builder;
+    }
+
+    /// <summary>
+    /// Omits the storage class from the generated PVC.
+    /// </summary>
+    /// <param name="builder">The persistent volume resource builder.</param>
+    /// <returns>The same builder for chaining.</returns>
+    [AspireExport]
+    public static IResourceBuilder<KubernetesPersistentVolumeResource> WithoutStorageClass(
+        this IResourceBuilder<KubernetesPersistentVolumeResource> builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Resource.ShouldRequestStorageClassName = false;
+        builder.Resource.StorageClassName = null;
         return builder;
     }
 

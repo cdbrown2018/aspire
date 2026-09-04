@@ -80,6 +80,11 @@ public sealed class KubernetesPersistentVolumeResource(
     public KubernetesEnvironmentResource Parent { get; } = environment ?? throw new ArgumentNullException(nameof(environment));
 
     /// <summary>
+    /// Gets or sets whether or not the generated PVC should request a storage class.
+    /// </summary>
+    internal bool ShouldRequestStorageClassName { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the storage class name for the generated PVC. When unset, the
     /// cluster's default storage class is used.
     /// </summary>

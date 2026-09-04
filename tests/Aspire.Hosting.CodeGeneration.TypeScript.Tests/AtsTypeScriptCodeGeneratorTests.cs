@@ -1086,6 +1086,16 @@ public class AtsTypeScriptCodeGeneratorTests
             generatedCode.Split('\n'),
             line => line.Contains("withPersistentVolumeName(", StringComparison.Ordinal) &&
                 line.Contains("persistentVolumeName: string", StringComparison.Ordinal));
+
+        var withoutStorageClassCapability = Assert.Single(
+            scanResult.Capabilities,
+            c => c.CapabilityId == "Aspire.Hosting.Kubernetes/withoutStorageClass");
+        Assert.Equal("withoutStorageClass", withoutStorageClassCapability.MethodName);
+        Assert.Empty(withoutStorageClassCapability.Parameters);
+
+        Assert.Contains(
+            generatedCode.Split('\n'),
+            line => line.Contains("withoutStorageClass()", StringComparison.Ordinal));
     }
 
     // ===== 2-Pass Scanning / Cross-Assembly Expansion Tests =====

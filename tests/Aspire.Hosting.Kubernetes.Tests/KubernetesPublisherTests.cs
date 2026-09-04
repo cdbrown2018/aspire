@@ -1758,6 +1758,54 @@ public class KubernetesPublisherTests(ITestOutputHelper outputHelper)
     }
 
     [Fact]
+    public async Task PublishAsync_WithFirstClassPersistentVolume_StorageClassConfigurationPreservesOmissionAndEmptyValue()
+    {
+        using var workspace = TemporaryWorkspace.Create(outputHelper);
+        var builder = TestDistributedApplicationBuilder.Create(DistributedApplicationOperation.Publish, workspace.Path);
+
+        var k8s = builder.AddKubernetesEnvironment("env")
+            .WithProperties(environment => environment.DefaultStorageClassName = "default-class");
+        var omitted = k8s.AddPersistentVolume("omitted")
+            .WithPersistentVolumeName("existing-volume")
+            .WithoutStorageClass();
+        var empty = k8s.AddPersistentVolume("empty")
+            .WithStorageClass(string.Empty);
+
+        builder.AddContainer("service", "nginx")
+            .WithPersistentVolume(omitted, "/var/lib/data")
+            .WithPersistentVolume(empty, "/var/lib/empty");
+
+        var app = builder.Build();
+        app.Run();
+
+        var omittedClaimPath = Path.Combine(workspace.Path, "templates", "omitted", "omitted.yaml");
+        var emptyClaimPath = Path.Combine(workspace.Path, "templates", "empty", "empty.yaml");
+        Assert.True(File.Exists(omittedClaimPath));
+        Assert.True(File.Exists(emptyClaimPath));
+
+        var omittedYaml = new YamlStream();
+        using (var omittedReader = new StringReader(await File.ReadAllTextAsync(omittedClaimPath)))
+        {
+            omittedYaml.Load(omittedReader);
+        }
+
+        var omittedRoot = Assert.IsType<YamlMappingNode>(omittedYaml.Documents[0].RootNode);
+        var omittedSpec = Assert.IsType<YamlMappingNode>(omittedRoot.Children.Single(entry => entry.Key is YamlScalarNode { Value: "spec" }).Value);
+        Assert.DoesNotContain(omittedSpec.Children, entry => entry.Key is YamlScalarNode { Value: "storageClassName" });
+
+        var emptyYaml = new YamlStream();
+        using (var emptyReader = new StringReader(await File.ReadAllTextAsync(emptyClaimPath)))
+        {
+            emptyYaml.Load(emptyReader);
+        }
+
+        var emptyRoot = Assert.IsType<YamlMappingNode>(emptyYaml.Documents[0].RootNode);
+        var emptySpec = Assert.IsType<YamlMappingNode>(emptyRoot.Children.Single(entry => entry.Key is YamlScalarNode { Value: "spec" }).Value);
+        var storageClassName = Assert.IsType<YamlScalarNode>(emptySpec.Children.Single(entry => entry.Key is YamlScalarNode { Value: "storageClassName" }).Value);
+        Assert.Equal(string.Empty, storageClassName.Value);
+    }
+
+    [Fact]
     public async Task PublishAsync_WithFirstClassPersistentVolume_KubernetesCustomizationOverridesDefaultFsGroup()
     {
         using var workspace = TemporaryWorkspace.Create(outputHelper);
