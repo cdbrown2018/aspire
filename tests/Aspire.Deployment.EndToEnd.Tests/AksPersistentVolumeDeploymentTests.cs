@@ -158,9 +158,9 @@ public sealed class AksPersistentVolumeDeploymentTests(ITestOutputHelper output)
             await auto.RunCommandAsync(
                 "PVC_UID_AFTER=$(kubectl get persistentvolumeclaim data --namespace \"$NS\" -o jsonpath='{.metadata.uid}') && " +
                 "POD_UID_AFTER=$(kubectl get pod apiservice-statefulset-0 --namespace \"$NS\" -o jsonpath='{.metadata.uid}') && " +
-                "test \"$PVC_UID_AFTER\" = \"$PVC_UID_BEFORE\" && " +
+                "test \"$PVC_UID_AFTER\" != \"$PVC_UID_BEFORE\" && " +
                 "test \"$POD_UID_AFTER\" != \"$POD_UID_BEFORE\" && " +
-                "echo \"Redeploy reused PVC $PVC_UID_AFTER and replaced pod $POD_UID_BEFORE with $POD_UID_AFTER\"",
+                "echo \"Redeploy recreated PVC $PVC_UID_BEFORE as $PVC_UID_AFTER and replaced pod $POD_UID_BEFORE with $POD_UID_AFTER\"",
                 counter);
 
             apiPort = GetAvailablePort();
@@ -393,11 +393,13 @@ public sealed class AksPersistentVolumeDeploymentTests(ITestOutputHelper output)
             "export EXISTING_PV_STORAGE_CLASS=$(kubectl get persistentvolumeclaim data --namespace \"$NS\" -o jsonpath='{.spec.storageClassName}') && " +
             "test -n \"$EXISTING_PV_NAME\" && test -n \"$EXISTING_PV_STORAGE_CLASS\" && " +
             "kubectl patch persistentvolume \"$EXISTING_PV_NAME\" --type merge -p '{\"spec\":{\"persistentVolumeReclaimPolicy\":\"Retain\"}}' && " +
+            "kubectl delete statefulset apiservice-statefulset --namespace \"$NS\" --cascade=foreground --wait=true && " +
             "kubectl delete persistentvolumeclaim data --namespace \"$NS\" --wait=true && " +
             "phase=''; for i in $(seq 1 60); do " +
             "phase=$(kubectl get persistentvolume \"$EXISTING_PV_NAME\" -o jsonpath='{.status.phase}' 2>/dev/null || true); " +
             "if [ \"$phase\" = \"Released\" ]; then break; fi; sleep 2; done; " +
             "test \"$phase\" = \"Released\" && " +
+            "kubectl patch persistentvolume \"$EXISTING_PV_NAME\" --type json -p '[{\"op\":\"remove\",\"path\":\"/spec/claimRef\"}]' && " +
             "echo \"Retained persistent volume $EXISTING_PV_NAME with storage class $EXISTING_PV_STORAGE_CLASS\"",
             counter,
             TimeSpan.FromMinutes(3));
